@@ -319,6 +319,7 @@ export function PatientPortal() {
   const [rescheduleFor, setRescheduleFor] = useState<Booking | null>(null);
   const [actionError, setActionError] = useState("");
   const [actionMsg, setActionMsg] = useState("");
+  const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
 
   function lookup(e: React.FormEvent) {
     e.preventDefault();
@@ -328,8 +329,12 @@ export function PatientPortal() {
   }
 
   async function doCancel(b: Booking) {
-    if (!window.confirm(`Cancel the ${b.service} booking on ${b.date} at ${b.timeSlot}?`)) return;
+    // No native window.confirm here on purpose: the browser's own
+    // confirm dialog cannot be accepted by automated checks (and it
+    // looks out of place in the app). Confirmation is a two-step inline
+    // button instead — see the Cancel button below.
     setActionError("");
+    setActionMsg("");
     try {
       await cancelBooking(b);
       setActionMsg("Booking cancelled.");
@@ -387,7 +392,14 @@ export function PatientPortal() {
                       {(b.status === "Pending" || b.status === "Confirmed") && (
                         <>
                           <button className="mini-btn" type="button" onClick={() => setRescheduleFor(b)}>Reschedule</button>
-                          <button className="mini-btn danger" type="button" onClick={() => void doCancel(b)}>Cancel</button>
+                          {confirmCancelId === b.id ? (
+                            <>
+                              <button className="mini-btn danger" type="button" onClick={() => { setConfirmCancelId(null); void doCancel(b); }}>Yes, cancel it</button>
+                              <button className="mini-btn" type="button" onClick={() => setConfirmCancelId(null)}>Keep booking</button>
+                            </>
+                          ) : (
+                            <button className="mini-btn danger" type="button" onClick={() => setConfirmCancelId(b.id)}>Cancel</button>
+                          )}
                         </>
                       )}
                       <a className="mini-btn" href={`https://wa.me/${waDigits(b.phone)}`} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>WhatsApp</a>
