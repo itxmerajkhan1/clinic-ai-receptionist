@@ -9,7 +9,7 @@
 // expected when no Gemini key is configured.
 
 import type { VercelRequest, VercelResponse } from "./_types";
-import { callGemini, resolveGeminiKey } from "./_gemini";
+import { callGemini, resolveGeminiKey } from "./_gemini.js";
 
 const CLINIC_NAME = "Refine Aesthetics by Dr. Areesha";
 const DOCTOR = "Dr. Areesha Wasay";

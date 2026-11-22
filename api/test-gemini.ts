@@ -4,7 +4,7 @@
 // Success: { ok: true, model } / Failure: { ok: false, error }
 
 import type { VercelRequest, VercelResponse } from "./_types";
-import { callGeminiOnce, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isOverloadError } from "./_gemini";
+import { callGeminiOnce, GEMINI_MODEL, GEMINI_FALLBACK_MODEL, isOverloadError } from "./_gemini.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
