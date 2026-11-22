@@ -660,18 +660,29 @@ function mergeSiteContent(d: DocumentData | null): SiteContent {
   };
 }
 
-/** Live site content: any save in Admin appears on the site at once. */
-export function useSiteContent(): { content: SiteContent } {
+/** Live site content: any save in Admin appears on the site at once.
+ *  `loading` is true until the first snapshot arrives — Admin forms
+ *  must wait for it before copying the content into their fields, or
+ *  they would initialise from the defaults and show (and on the next
+ *  save, overwrite) the saved values with defaults. */
+export function useSiteContent(): { content: SiteContent; loading: boolean } {
   const [content, setContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     const unsub = onSnapshot(
       doc(db, "settings", "site-content"),
-      (snap) => setContent(mergeSiteContent(snap.exists() ? snap.data() : null)),
-      () => setContent(DEFAULT_SITE_CONTENT),
+      (snap) => {
+        setContent(mergeSiteContent(snap.exists() ? snap.data() : null));
+        setLoading(false);
+      },
+      () => {
+        setContent(DEFAULT_SITE_CONTENT);
+        setLoading(false);
+      },
     );
     return unsub;
   }, []);
-  return { content };
+  return { content, loading };
 }
 
 export async function saveSiteContent(patch: Partial<SiteContent>): Promise<void> {

@@ -1348,7 +1348,7 @@ const HEADING_LABELS: { key: keyof import("../firebase").SiteHeadings; label: st
 ];
 
 function WebsiteContentTab() {
-  const { content } = useSiteContent();
+  const { content, loading } = useSiteContent();
   const [loaded, setLoaded] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -1386,7 +1386,7 @@ function WebsiteContentTab() {
   const [doctorPoints, setDoctorPoints] = useState<string[]>([]);
 
   useEffect(() => {
-    if (loaded) return;
+    if (loading || loaded) return;
     setClinicName(content.clinicName);
     setTagline(content.tagline);
     setHeroHeading(content.heroHeading);
@@ -1409,7 +1409,7 @@ function WebsiteContentTab() {
     setDentalTips(content.dentalTips);
     setDoctorPoints(content.doctorPoints);
     setLoaded(true);
-  }, [content, loaded]);
+  }, [content, loading, loaded]);
 
   async function save(patch: Parameters<typeof saveSiteContent>[0], note: string) {
     setError("");
