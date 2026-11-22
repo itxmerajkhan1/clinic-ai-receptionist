@@ -19,6 +19,9 @@ import {
   useReviews,
   useDoctors,
   useClinicSettings,
+  useSiteContent,
+  saveSiteContent,
+  uploadSiteImage,
   seedDefaultsIfMissing,
   saveClinicSettings,
   setBookingStatus,
@@ -45,6 +48,9 @@ import {
   type Booking,
   type BookingStatus,
   type Offer,
+  type GalleryImage,
+  type FaqItem,
+  type TitleTextItem,
 } from "../firebase";
 
 type Tab =
@@ -57,6 +63,7 @@ type Tab =
   | "Reviews"
   | "Offers"
   | "Messages"
+  | "Website Content"
   | "Settings";
 
 const TABS: Tab[] = [
@@ -69,6 +76,7 @@ const TABS: Tab[] = [
   "Reviews",
   "Offers",
   "Messages",
+  "Website Content",
   "Settings",
 ];
 
@@ -262,6 +270,7 @@ function Dashboard({ onBack }: { onBack: () => void }) {
         {tab === "Reviews" && <ReviewsTab />}
         {tab === "Offers" && <OffersTab />}
         {tab === "Messages" && <MessagesTab />}
+        {tab === "Website Content" && <WebsiteContentTab />}
         {tab === "Settings" && <SettingsTab />}
       </main>
     </div>
@@ -1183,6 +1192,460 @@ function SettingsTab() {
             {busy ? "Saving…" : "Save key to Firestore"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Website Content tab — the admin edits the public site itself.       */
+/* Everything saved here appears on the live site at once (the         */
+/* patient page reads settings/site-content live). Text that was never  */
+/* saved falls back to the built-in defaults, so nothing renders       */
+/* blank. Images upload to Firebase Storage (admin-only upload,        */
+/* public read — see storage.rules) and are saved by URL.              */
+/* ------------------------------------------------------------------ */
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  textarea,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  textarea?: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>{label}</label>
+      {textarea ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={3}
+          style={{ width: "100%" }}
+        />
+      ) : (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{ width: "100%" }}
+        />
+      )}
+    </div>
+  );
+}
+
+function UploadButton({
+  label,
+  disabled,
+  onFile,
+}: {
+  label: string;
+  disabled?: boolean;
+  onFile: (f: File) => void;
+}) {
+  return (
+    <label className="btn" style={{ display: "inline-block", cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.6 : 1 }}>
+      {label}
+      <input
+        type="file"
+        accept="image/*"
+        disabled={disabled}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) onFile(f);
+        }}
+      />
+    </label>
+  );
+}
+
+function PairRows({
+  items,
+  onChange,
+  titlePh,
+  textPh,
+}: {
+  items: { title: string; text: string }[];
+  onChange: (v: { title: string; text: string }[]) => void;
+  titlePh: string;
+  textPh: string;
+}) {
+  const set = (i: number, patch: Partial<{ title: string; text: string }>) =>
+    onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  return (
+    <div>
+      {items.map((it, i) => (
+        <div key={i} className="card" style={{ marginBottom: 10, padding: 12 }}>
+          <Field label="Title" value={it.title} onChange={(v) => set(i, { title: v })} placeholder={titlePh} />
+          <Field label="Text" value={it.text} onChange={(v) => set(i, { text: v })} placeholder={textPh} textarea />
+          <button className="mini-btn danger" type="button" onClick={() => onChange(items.filter((_, j) => j !== i))}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button className="btn ghost" type="button" onClick={() => onChange([...items, { title: "", text: "" }])}>
+        + Add item
+      </button>
+    </div>
+  );
+}
+
+function FaqRows({
+  items,
+  onChange,
+}: {
+  items: FaqItem[];
+  onChange: (v: FaqItem[]) => void;
+}) {
+  const set = (i: number, patch: Partial<FaqItem>) =>
+    onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  return (
+    <div>
+      {items.map((it, i) => (
+        <div key={i} className="card" style={{ marginBottom: 10, padding: 12 }}>
+          <Field label="Question" value={it.q} onChange={(v) => set(i, { q: v })} placeholder="What should patients ask?" />
+          <Field label="Answer" value={it.a} onChange={(v) => set(i, { a: v })} placeholder="The answer patients see" textarea />
+          <button className="mini-btn danger" type="button" onClick={() => onChange(items.filter((_, j) => j !== i))}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button className="btn ghost" type="button" onClick={() => onChange([...items, { q: "", a: "" }])}>
+        + Add question
+      </button>
+    </div>
+  );
+}
+
+function StringRows({
+  items,
+  onChange,
+  placeholder,
+}: {
+  items: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      {items.map((it, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            value={it}
+            onChange={(e) => onChange(items.map((x, j) => (j === i ? e.target.value : x)))}
+            placeholder={placeholder}
+            style={{ flex: 1 }}
+          />
+          <button className="mini-btn danger" type="button" onClick={() => onChange(items.filter((_, j) => j !== i))}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button className="btn ghost" type="button" onClick={() => onChange([...items, ""])}>
+        + Add point
+      </button>
+    </div>
+  );
+}
+
+const HEADING_LABELS: { key: keyof import("../firebase").SiteHeadings; label: string }[] = [
+  { key: "howItWorks", label: "How it works section" },
+  { key: "treatments", label: "Treatments section" },
+  { key: "pricing", label: "Prices section" },
+  { key: "whyUs", label: "Why choose us section" },
+  { key: "firstVisit", label: "First visit section" },
+  { key: "gallery", label: "Gallery section" },
+  { key: "reviews", label: "Reviews section" },
+  { key: "dentalTips", label: "Dental tips section" },
+  { key: "faq", label: "FAQ section" },
+  { key: "booking", label: "Booking section" },
+  { key: "portal", label: "Patient Portal section" },
+];
+
+function WebsiteContentTab() {
+  const { content } = useSiteContent();
+  const [loaded, setLoaded] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Clinic identity
+  const [clinicName, setClinicName] = useState("");
+  const [tagline, setTagline] = useState("");
+  const [heroHeading, setHeroHeading] = useState("");
+  const [heroSub, setHeroSub] = useState("");
+  const [doctorName, setDoctorName] = useState("");
+  const [consultationLine, setConsultationLine] = useState("");
+  const [bookingPhone, setBookingPhone] = useState("");
+  const [bookingPhoneWa, setBookingPhoneWa] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
+  const [sundayNote, setSundayNote] = useState("");
+
+  // Section headings
+  const [headings, setHeadings] = useState(content.headings);
+
+  // Images
+  const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [gallery, setGallery] = useState<GalleryImage[]>([]);
+
+  // Lists
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [howItWorks, setHowItWorks] = useState<TitleTextItem[]>([]);
+  const [whyChooseUs, setWhyChooseUs] = useState<TitleTextItem[]>([]);
+  const [firstVisit, setFirstVisit] = useState<TitleTextItem[]>([]);
+  const [dentalTips, setDentalTips] = useState<TitleTextItem[]>([]);
+  const [doctorPoints, setDoctorPoints] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (loaded) return;
+    setClinicName(content.clinicName);
+    setTagline(content.tagline);
+    setHeroHeading(content.heroHeading);
+    setHeroSub(content.heroSub);
+    setDoctorName(content.doctorName);
+    setConsultationLine(content.consultationLine);
+    setBookingPhone(content.bookingPhone);
+    setBookingPhoneWa(content.bookingPhoneWa);
+    setInstagram(content.instagram);
+    setInstagramUrl(content.instagramUrl);
+    setSundayNote(content.sundayNote);
+    setHeadings(content.headings);
+    setHeroImageUrl(content.heroImageUrl);
+    setGallery(content.gallery);
+    setFaqs(content.faqs);
+    setHowItWorks(content.howItWorks);
+    setWhyChooseUs(content.whyChooseUs);
+    setFirstVisit(content.firstVisit);
+    setDentalTips(content.dentalTips);
+    setDoctorPoints(content.doctorPoints);
+    setLoaded(true);
+  }, [content, loaded]);
+
+  async function save(patch: Parameters<typeof saveSiteContent>[0], note: string) {
+    setError("");
+    setMsg("");
+    setBusy(true);
+    try {
+      await saveSiteContent(patch);
+      setMsg(note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onHeroFile(file: File) {
+    setError("");
+    setMsg("");
+    setUploading(true);
+    try {
+      const url = await uploadSiteImage(file);
+      setHeroImageUrl(url);
+      await saveSiteContent({ heroImageUrl: url });
+      setMsg("Hero image uploaded and saved — it is live on the site now.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function onGalleryFile(file: File) {
+    setError("");
+    setMsg("");
+    setUploading(true);
+    try {
+      const url = await uploadSiteImage(file);
+      const next = [...gallery, { url, title: "New photo" }];
+      setGallery(next);
+      await saveSiteContent({ gallery: next });
+      setMsg("Photo uploaded and saved — it is live in the gallery now. Edit its title below and save the gallery to keep the title.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const cleanPairs = (items: TitleTextItem[]) => items.filter((x) => x.title.trim() || x.text.trim());
+  const cleanFaqs = (items: FaqItem[]) => items.filter((x) => x.q.trim() || x.a.trim());
+
+  return (
+    <div>
+      <h1>Website Content</h1>
+      <p className="muted">
+        Everything here changes the live public site the moment you save it. Pictures upload straight from your
+        device — no links needed. Anything you leave untouched keeps the current text and pictures.
+      </p>
+      {error && <div className="error">{error}</div>}
+      {msg && <div className="notice">{msg}</div>}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Clinic &amp; hero</h2>
+        <Field label="Clinic name" value={clinicName} onChange={setClinicName} />
+        <Field label="Tagline (under the clinic name)" value={tagline} onChange={setTagline} />
+        <Field label="Hero heading (big title)" value={heroHeading} onChange={setHeroHeading} textarea />
+        <Field label="Hero subheading" value={heroSub} onChange={setHeroSub} textarea />
+        <Field label="Doctor name" value={doctorName} onChange={setDoctorName} />
+        <Field label="Consultation line" value={consultationLine} onChange={setConsultationLine} />
+        <Field label="Booking phone" value={bookingPhone} onChange={setBookingPhone} />
+        <Field label="WhatsApp number (country code, no +)" value={bookingPhoneWa} onChange={setBookingPhoneWa} />
+        <Field label="Instagram handle" value={instagram} onChange={setInstagram} />
+        <Field label="Instagram URL" value={instagramUrl} onChange={setInstagramUrl} />
+        <Field label="Sunday note" value={sundayNote} onChange={setSundayNote} textarea />
+        <button
+          className="btn"
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void save(
+              {
+                clinicName: clinicName.trim(),
+                tagline: tagline.trim(),
+                heroHeading: heroHeading.trim(),
+                heroSub: heroSub.trim(),
+                doctorName: doctorName.trim(),
+                consultationLine: consultationLine.trim(),
+                bookingPhone: bookingPhone.trim(),
+                bookingPhoneWa: bookingPhoneWa.trim(),
+                instagram: instagram.trim(),
+                instagramUrl: instagramUrl.trim(),
+                sundayNote: sundayNote.trim(),
+              },
+              "Clinic & hero saved — live on the site now.",
+            )
+          }
+        >
+          Save clinic &amp; hero
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Hero image</h2>
+        {heroImageUrl ? (
+          <img src={heroImageUrl} alt="Hero" style={{ maxWidth: 320, borderRadius: 8, display: "block", marginBottom: 10 }} />
+        ) : (
+          <p className="muted">No hero image yet — the hero shows the headline only.</p>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <UploadButton label={uploading ? "Uploading…" : "Upload hero image"} disabled={uploading} onFile={(f) => void onHeroFile(f)} />
+          {heroImageUrl && (
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setHeroImageUrl("");
+                void save({ heroImageUrl: "" }, "Hero image removed.");
+              }}
+            >
+              Remove image
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Section headings</h2>
+        {HEADING_LABELS.map(({ key, label }) => (
+          <Field key={key} label={label} value={headings[key]} onChange={(v) => setHeadings({ ...headings, [key]: v })} />
+        ))}
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ headings }, "Headings saved — live on the site now.")}>
+          Save headings
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Gallery photos</h2>
+        <p className="muted">Upload photos from your device. Edit a title, then save the gallery. Removing a photo here removes it from the site.</p>
+        {gallery.length === 0 && <p className="muted">No gallery photos yet.</p>}
+        {gallery.map((g, i) => (
+          <div key={i} className="card" style={{ marginBottom: 10, padding: 12 }}>
+            {g.url && <img src={g.url} alt={g.title || "Gallery photo"} style={{ maxWidth: 220, borderRadius: 8, display: "block", marginBottom: 8 }} />}
+            <Field
+              label="Photo title"
+              value={g.title}
+              onChange={(v) => setGallery(gallery.map((x, j) => (j === i ? { ...x, title: v } : x)))}
+            />
+            <button className="mini-btn danger" type="button" onClick={() => setGallery(gallery.filter((_, j) => j !== i))}>
+              Remove photo
+            </button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <UploadButton label={uploading ? "Uploading…" : "Upload a photo"} disabled={uploading} onFile={(f) => void onGalleryFile(f)} />
+          <button className="btn" type="button" disabled={busy} onClick={() => void save({ gallery }, "Gallery saved — live on the site now.")}>
+            Save gallery
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>FAQs</h2>
+        <FaqRows items={faqs} onChange={setFaqs} />
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ faqs: cleanFaqs(faqs) }, "FAQs saved — live on the site now.")} style={{ marginTop: 10 }}>
+          Save FAQs
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>How it works</h2>
+        <PairRows items={howItWorks} onChange={setHowItWorks} titlePh="Step title" textPh="Step description" />
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ howItWorks: cleanPairs(howItWorks) }, "Saved — live on the site now.")} style={{ marginTop: 10 }}>
+          Save how it works
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Why choose us</h2>
+        <PairRows items={whyChooseUs} onChange={setWhyChooseUs} titlePh="Reason title" textPh="Reason description" />
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ whyChooseUs: cleanPairs(whyChooseUs) }, "Saved — live on the site now.")} style={{ marginTop: 10 }}>
+          Save why choose us
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Your first visit</h2>
+        <PairRows items={firstVisit} onChange={setFirstVisit} titlePh="Point title" textPh="Point description" />
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ firstVisit: cleanPairs(firstVisit) }, "Saved — live on the site now.")} style={{ marginTop: 10 }}>
+          Save first visit
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Dental tips</h2>
+        <PairRows items={dentalTips} onChange={setDentalTips} titlePh="Tip title" textPh="Tip text" />
+        <button className="btn" type="button" disabled={busy} onClick={() => void save({ dentalTips: cleanPairs(dentalTips) }, "Saved — live on the site now.")} style={{ marginTop: 10 }}>
+          Save dental tips
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Doctor points</h2>
+        <p className="muted">Short points shown under the doctor&apos;s name.</p>
+        <StringRows items={doctorPoints} onChange={setDoctorPoints} placeholder="e.g. 10+ years of experience" />
+        <button
+          className="btn"
+          type="button"
+          disabled={busy}
+          onClick={() => void save({ doctorPoints: doctorPoints.map((s) => s.trim()).filter(Boolean) }, "Saved — live on the site now.")}
+          style={{ marginTop: 10 }}
+        >
+          Save doctor points
+        </button>
       </div>
     </div>
   );

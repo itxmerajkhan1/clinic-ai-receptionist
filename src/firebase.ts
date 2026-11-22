@@ -21,6 +21,11 @@
 // - settings/gemini      — admin-only Gemini API key (admin-only
 //                          read/write per the rules file)
 // - settings/doctors     — doctor list (admin-managed)
+// - settings/site-content — website content the admin edits from the
+//                          "Website Content" tab (headings, clinic
+//                          identity, FAQs, lists, gallery, hero image)
+// - Storage site-images/ — admin-uploaded site images (public read,
+//                          admin-only upload per storage.rules)
 //
 // Real-time: reads below are onSnapshot subscriptions, so a change on
 // any device appears everywhere immediately. There is NO fallback
@@ -58,9 +63,21 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 import { useEffect, useState } from "react";
 import {
   CLINIC,
+  FAQS,
+  HOW_IT_WORKS,
+  WHY_CHOOSE_US,
+  FIRST_VISIT,
+  DENTAL_TIPS,
+  DOCTOR_POINTS,
   buildSlotList,
   isSunday,
   karachiToday,
@@ -80,6 +97,7 @@ export const FIREBASE_CONFIG = {
 const app = initializeApp(FIREBASE_CONFIG);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 /** The one admin identity: the admin account's email. */
 export const ADMIN_EMAIL = CLINIC.adminEmail;
@@ -476,6 +494,212 @@ export async function saveClinicSettings(
   if (payments) data.paymentsUpdatedAtMs = Date.now();
   else data.updatedAtMs = Date.now();
   await setDoc(doc(db, "settings", "clinic"), data, { merge: true });
+}
+
+/* ------------------------------------------------------------------ */
+/* Website content (Admin "Website Content" tab)                       */
+/*                                                                     */
+/* One Firestore doc, settings/site-content, holds everything the      */
+/* admin can change about the public site: headings, clinic identity,  */
+/* FAQ / content lists, the hero image and the gallery. The patient    */
+/* page reads it live and falls back to the clinic.ts defaults for     */
+/* any field the admin has never saved, so the site never renders      */
+/* blank. Firestore rules already allow public get + admin-only write  */
+/* on settings/{docId} (except settings/gemini), so no rules change    */
+/* is needed for this doc. Images live in Firebase Storage under       */
+/* site-images/ (see storage.rules: admin-only upload, public read).   */
+/* ------------------------------------------------------------------ */
+
+export type GalleryImage = { url: string; title: string };
+export type FaqItem = { q: string; a: string };
+export type TitleTextItem = { title: string; text: string };
+
+export type SiteHeadings = {
+  howItWorks: string;
+  treatments: string;
+  pricing: string;
+  whyUs: string;
+  firstVisit: string;
+  gallery: string;
+  reviews: string;
+  dentalTips: string;
+  faq: string;
+  booking: string;
+  portal: string;
+};
+
+export type SiteContent = {
+  clinicName: string;
+  tagline: string;
+  heroHeading: string;
+  heroSub: string;
+  heroImageUrl: string;
+  doctorName: string;
+  consultationLine: string;
+  bookingPhone: string;
+  bookingPhoneWa: string;
+  instagram: string;
+  instagramUrl: string;
+  sundayNote: string;
+  headings: SiteHeadings;
+  gallery: GalleryImage[];
+  faqs: FaqItem[];
+  howItWorks: TitleTextItem[];
+  whyChooseUs: TitleTextItem[];
+  firstVisit: TitleTextItem[];
+  dentalTips: TitleTextItem[];
+  doctorPoints: string[];
+  updatedAtMs: number;
+};
+
+export const DEFAULT_SITE_CONTENT: SiteContent = {
+  clinicName: CLINIC.name,
+  tagline: CLINIC.tagline,
+  heroHeading: "Aesthetics, skincare & dental — with a free consultation.",
+  heroSub: `Refine Aesthetics by ${CLINIC.doctor}, Karachi. Evening hours, two branches, and Sarah — our AI receptionist — answering 24/7.`,
+  heroImageUrl: "",
+  doctorName: CLINIC.doctor,
+  consultationLine: CLINIC.consultation,
+  bookingPhone: CLINIC.bookingPhone,
+  bookingPhoneWa: CLINIC.bookingPhoneWa,
+  instagram: CLINIC.instagram,
+  instagramUrl: CLINIC.instagramUrl,
+  sundayNote: CLINIC.sundayNote,
+  headings: {
+    howItWorks: "Booking takes 4 steps",
+    treatments: "Treatments at Refine Aesthetics",
+    pricing: "Clear on cost, before you decide",
+    whyUs: "Care that puts you first",
+    firstVisit: "Your first visit",
+    gallery: "A look around",
+    reviews: "What patients say",
+    dentalTips: "Simple habits, healthier teeth",
+    faq: "Questions, answered",
+    booking: "Pick your slot",
+    portal: "Manage your bookings",
+  },
+  gallery: [
+    { url: "", title: "Reception" },
+    { url: "", title: "Treatment Room" },
+    { url: "", title: "Dental Suite" },
+  ],
+  faqs: FAQS,
+  howItWorks: HOW_IT_WORKS,
+  whyChooseUs: WHY_CHOOSE_US,
+  firstVisit: FIRST_VISIT,
+  dentalTips: DENTAL_TIPS,
+  doctorPoints: DOCTOR_POINTS,
+  updatedAtMs: 0,
+};
+
+function asTitleText(v: unknown): TitleTextItem[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    .map((x) => ({ title: str(x.title), text: str(x.text) }))
+    .filter((x) => x.title || x.text);
+  return out;
+}
+
+function asFaqs(v: unknown): FaqItem[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    .map((x) => ({ q: str(x.q), a: str(x.a) }))
+    .filter((x) => x.q || x.a);
+  return out;
+}
+
+function asGallery(v: unknown): GalleryImage[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    .map((x) => ({ url: str(x.url), title: str(x.title) }))
+    .filter((x) => x.url || x.title);
+  return out;
+}
+
+function asStrings(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((x): x is string => typeof x === "string");
+}
+
+function mergeSiteContent(d: DocumentData | null): SiteContent {
+  const base = DEFAULT_SITE_CONTENT;
+  if (!d) return base;
+  const headings = (d.headings ?? {}) as Record<string, unknown>;
+  return {
+    clinicName: str(d.clinicName, base.clinicName),
+    tagline: str(d.tagline, base.tagline),
+    heroHeading: str(d.heroHeading, base.heroHeading),
+    heroSub: str(d.heroSub, base.heroSub),
+    heroImageUrl: str(d.heroImageUrl, base.heroImageUrl),
+    doctorName: str(d.doctorName, base.doctorName),
+    consultationLine: str(d.consultationLine, base.consultationLine),
+    bookingPhone: str(d.bookingPhone, base.bookingPhone),
+    bookingPhoneWa: str(d.bookingPhoneWa, base.bookingPhoneWa),
+    instagram: str(d.instagram, base.instagram),
+    instagramUrl: str(d.instagramUrl, base.instagramUrl),
+    sundayNote: str(d.sundayNote, base.sundayNote),
+    headings: {
+      howItWorks: str(headings.howItWorks, base.headings.howItWorks),
+      treatments: str(headings.treatments, base.headings.treatments),
+      pricing: str(headings.pricing, base.headings.pricing),
+      whyUs: str(headings.whyUs, base.headings.whyUs),
+      firstVisit: str(headings.firstVisit, base.headings.firstVisit),
+      gallery: str(headings.gallery, base.headings.gallery),
+      reviews: str(headings.reviews, base.headings.reviews),
+      dentalTips: str(headings.dentalTips, base.headings.dentalTips),
+      faq: str(headings.faq, base.headings.faq),
+      booking: str(headings.booking, base.headings.booking),
+      portal: str(headings.portal, base.headings.portal),
+    },
+    gallery: asGallery(d.gallery) ?? base.gallery,
+    faqs: asFaqs(d.faqs) ?? base.faqs,
+    howItWorks: asTitleText(d.howItWorks) ?? base.howItWorks,
+    whyChooseUs: asTitleText(d.whyChooseUs) ?? base.whyChooseUs,
+    firstVisit: asTitleText(d.firstVisit) ?? base.firstVisit,
+    dentalTips: asTitleText(d.dentalTips) ?? base.dentalTips,
+    doctorPoints: asStrings(d.doctorPoints) ?? base.doctorPoints,
+    updatedAtMs: num(d.updatedAtMs, 0),
+  };
+}
+
+/** Live site content: any save in Admin appears on the site at once. */
+export function useSiteContent(): { content: SiteContent } {
+  const [content, setContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "settings", "site-content"),
+      (snap) => setContent(mergeSiteContent(snap.exists() ? snap.data() : null)),
+      () => setContent(DEFAULT_SITE_CONTENT),
+    );
+    return unsub;
+  }, []);
+  return { content };
+}
+
+export async function saveSiteContent(patch: Partial<SiteContent>): Promise<void> {
+  await setDoc(
+    doc(db, "settings", "site-content"),
+    { ...patch, updatedAtMs: Date.now() },
+    { merge: true },
+  );
+}
+
+/** Upload an admin-chosen image to Firebase Storage and return its public URL. */
+export async function uploadSiteImage(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Please choose an image file (JPG or PNG).");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("That image is over 5 MB — please choose a smaller one.");
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `site-images/${Date.now()}-${safeName}`;
+  const ref = storageRef(storage, path);
+  await uploadBytes(ref, file, { contentType: file.type });
+  return getDownloadURL(ref);
 }
 
 /** Slot list generated from the admin-saved hours (inclusive). */

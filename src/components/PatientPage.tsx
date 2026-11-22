@@ -2,19 +2,10 @@
 // reviews, FAQ, booking, portal, branches, footer.
 
 import { useState } from "react";
-import {
-  CLINIC,
-  SERVICES,
-  FAQS,
-  HOW_IT_WORKS,
-  WHY_CHOOSE_US,
-  FIRST_VISIT,
-  DENTAL_TIPS,
-  DOCTOR_POINTS,
-  karachiToday,
-} from "../clinic";
+import { CLINIC, SERVICES, karachiToday } from "../clinic";
 import {
   useClinicSettings,
+  useSiteContent,
   useOffers,
   useReviews,
   submitInquiry,
@@ -23,14 +14,10 @@ import {
 import { BookingForm, PatientPortal, type BookingPrefill } from "./Booking";
 import { ChatPanel } from "./ChatPanel";
 
-const GALLERY = [
-  { title: "Reception", label: "Illustrative interior image — not a branch photo", cls: "" },
-  { title: "Treatment Room", label: "Illustrative interior image — not a branch photo", cls: "" },
-  { title: "Dental Suite", label: "Illustrative interior image — not a branch photo", cls: "" },
-];
-
 export function PatientPage() {
   const { settings } = useClinicSettings();
+  const { content: site } = useSiteContent();
+  const hasRealPhotos = site.gallery.some((g) => g.url);
   const offers = useOffers(false);
   const reviews = useReviews(false);
   const [prefill, setPrefill] = useState<BookingPrefill>({});
@@ -80,7 +67,7 @@ export function PatientPage() {
       });
       setCbDone(true);
     } catch {
-      setCbError("Could not send — please call 0334 3151514 instead.");
+      setCbError(`Could not send — please call ${site.bookingPhone} instead.`);
     }
   }
 
@@ -105,7 +92,7 @@ export function PatientPage() {
       <header className="topbar">
         <div className="topbar-in">
           <a className="brand" href="#top">
-            Refine Aesthetics<small>by Dr. Areesha Wasay · Karachi</small>
+            {site.clinicName.split(" by ")[0]}<small>by {site.doctorName} · Karachi</small>
           </a>
           <nav className="topnav">
             <a href="#services">Services</a>
@@ -122,13 +109,13 @@ export function PatientPage() {
       {/* Hero */}
       <section className="hero" id="top">
         <div className="wrap">
-          <h1>Aesthetics, skincare &amp; dental — with a free consultation.</h1>
-          <p>
-            Refine Aesthetics by {CLINIC.doctor}, Karachi. Evening hours, two
-            branches, and Sarah — our AI receptionist — answering 24/7.
-          </p>
+          <h1>{site.heroHeading}</h1>
+          <p>{site.heroSub}</p>
+          {site.heroImageUrl && (
+            <img src={site.heroImageUrl} alt="" style={{ width: "100%", maxHeight: 280, objectFit: "cover", borderRadius: 12, marginBottom: 16 }} />
+          )}
           <div className="hero-badges">
-            <span className="pill">Consultation completely FREE</span>
+            <span className="pill">{site.consultationLine}</span>
             <span className="pill">{hoursLabel}</span>
             <span className="pill">Clifton &amp; Johar</span>
           </div>
@@ -169,9 +156,9 @@ export function PatientPage() {
       <section className="section">
         <div className="wrap">
           <div className="eyebrow">How it works</div>
-          <h2>Booking takes 4 steps</h2>
+          <h2>{site.headings.howItWorks}</h2>
           <div className="grid cols-2" style={{ marginTop: 18 }}>
-            {HOW_IT_WORKS.map((s, i) => (
+            {site.howItWorks.map((s, i) => (
               <div className="card" key={s.title}>
                 <span className="tag">Step {i + 1}</span>
                 <h3>{s.title}</h3>
@@ -186,7 +173,7 @@ export function PatientPage() {
       <section className="section alt" id="services">
         <div className="wrap">
           <div className="eyebrow">Our services</div>
-          <h2>Treatments at Refine Aesthetics</h2>
+          <h2>{site.headings.treatments}</h2>
           <p className="lead">
             Every service starts with a free consultation — the doctor examines
             you, explains the plan, and confirms the fee before anything begins.
@@ -218,7 +205,7 @@ export function PatientPage() {
       <section className="section" id="prices">
         <div className="wrap">
           <div className="eyebrow">Prices &amp; payment</div>
-          <h2>Clear on cost, before you decide</h2>
+          <h2>{site.headings.pricing}</h2>
           <div className="grid cols-2" style={{ marginTop: 18 }}>
             <div className="card">
               <h3>Treatment fees</h3>
@@ -255,7 +242,7 @@ export function PatientPage() {
                     )}
                   </>
                 ) : (
-                  <p>Advance payment details are shared by the clinic on call or WhatsApp ({CLINIC.bookingPhone}).</p>
+                  <p>Advance payment details are shared by the clinic on call or WhatsApp ({site.bookingPhone}).</p>
                 )}
               </div>
               <div className="card">
@@ -281,13 +268,13 @@ export function PatientPage() {
       <section className="section alt">
         <div className="wrap">
           <div className="eyebrow">Your doctor</div>
-          <h2>{CLINIC.doctor}</h2>
+          <h2>{site.doctorName}</h2>
           <div className="card">
             <p><b>Founder and lead doctor of the clinic</b> — Refine Aesthetics runs under her name.</p>
             <ul className="includes">
-              {DOCTOR_POINTS.map((p) => <li key={p}>{p}</li>)}
+              {site.doctorPoints.map((p) => <li key={p}>{p}</li>)}
             </ul>
-            <p className="muted">For details about the rest of the team, contact the clinic on {CLINIC.bookingPhone}.</p>
+            <p className="muted">For details about the rest of the team, contact the clinic on {site.bookingPhone}.</p>
           </div>
         </div>
       </section>
@@ -296,15 +283,15 @@ export function PatientPage() {
       <section className="section">
         <div className="wrap">
           <div className="eyebrow">Why patients choose us</div>
-          <h2>Care that puts you first</h2>
+          <h2>{site.headings.whyUs}</h2>
           <div className="grid cols-3" style={{ marginTop: 18 }}>
-            {WHY_CHOOSE_US.map((s) => (
+            {site.whyChooseUs.map((s) => (
               <div className="card" key={s.title}><h3>{s.title}</h3><p>{s.text}</p></div>
             ))}
           </div>
-          <h2 style={{ marginTop: 40 }}>Your first visit</h2>
+          <h2 style={{ marginTop: 40 }}>{site.headings.firstVisit}</h2>
           <div className="grid cols-3" style={{ marginTop: 18 }}>
-            {FIRST_VISIT.map((s) => (
+            {site.firstVisit.map((s) => (
               <div className="card" key={s.title}><h3>{s.title}</h3><p>{s.text}</p></div>
             ))}
           </div>
@@ -315,13 +302,20 @@ export function PatientPage() {
       <section className="section alt">
         <div className="wrap">
           <div className="eyebrow">Inside the clinic</div>
-          <h2>A look around</h2>
-          <p className="lead">Tap any image to view it larger. These are illustrative interior images, not photos of the branches.</p>
+          <h2>{site.headings.gallery}</h2>
+          <p className="lead">
+            {hasRealPhotos
+              ? "Tap any image to view it larger."
+              : "Tap any image to view it larger. These are illustrative interior images, not photos of the branches."}
+          </p>
           <div className="gallery" style={{ marginTop: 18 }}>
-            {GALLERY.map((g, i) => (
-              <button key={g.title} className="gallery-tile" type="button" onClick={() => setLightbox(i)} aria-label={`View ${g.title}`}>
+            {site.gallery.map((g, i) => (
+              <button key={`${g.title}-${i}`} className="gallery-tile" type="button" onClick={() => setLightbox(i)} aria-label={`View ${g.title}`}>
+                {g.url ? (
+                  <img src={g.url} alt={g.title} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : null}
                 <span className="tile-title">{g.title}</span>
-                <span className="tile-label">{g.label}</span>
+                <span className="tile-label">{g.url ? "Clinic photo" : "Illustrative interior image — not a branch photo"}</span>
               </button>
             ))}
           </div>
@@ -330,11 +324,17 @@ export function PatientPage() {
       {lightbox !== null && (
         <div className="lightbox" onClick={() => setLightbox(null)} role="dialog" aria-label="Image preview">
           <div className="lightbox-in" onClick={(e) => e.stopPropagation()}>
-            <div className="ph gallery-tile" style={{ height: 220, position: "relative" }}>
-              <span className="tile-title">{GALLERY[lightbox].title}</span>
-              <span className="tile-label">{GALLERY[lightbox].label}</span>
-            </div>
-            <p className="muted">{GALLERY[lightbox].label}. Real branch photos are not published on this page.</p>
+            {site.gallery[lightbox].url ? (
+              <img src={site.gallery[lightbox].url} alt={site.gallery[lightbox].title} style={{ width: "100%", maxHeight: 420, objectFit: "contain", borderRadius: 8 }} />
+            ) : (
+              <div className="ph gallery-tile" style={{ height: 220, position: "relative" }}>
+                <span className="tile-title">{site.gallery[lightbox].title}</span>
+                <span className="tile-label">Illustrative interior image — not a branch photo</span>
+              </div>
+            )}
+            <p className="muted">
+              {site.gallery[lightbox].url ? site.gallery[lightbox].title : "Illustrative interior image — not a branch photo. Real branch photos are not published on this page."}
+            </p>
             <button className="btn" type="button" onClick={() => setLightbox(null)}>Close</button>
           </div>
         </div>
@@ -344,7 +344,7 @@ export function PatientPage() {
       <section className="section" id="reviews">
         <div className="wrap">
           <div className="eyebrow">Patient reviews</div>
-          <h2>What patients say</h2>
+          <h2>{site.headings.reviews}</h2>
           {reviews.length === 0 ? (
             <div className="empty-note" style={{ marginTop: 18 }}>
               No reviews yet — be the first to share your experience after your visit.
@@ -403,9 +403,9 @@ export function PatientPage() {
       <section className="section alt">
         <div className="wrap">
           <div className="eyebrow">General dental care</div>
-          <h2>Simple habits, healthier teeth</h2>
+          <h2>{site.headings.dentalTips}</h2>
           <div className="grid cols-3" style={{ marginTop: 18 }}>
-            {DENTAL_TIPS.map((t) => (
+            {site.dentalTips.map((t) => (
               <div className="card" key={t.title}><h3>{t.title}</h3><p>{t.text}</p></div>
             ))}
           </div>
@@ -417,9 +417,9 @@ export function PatientPage() {
       <section className="section" id="faq">
         <div className="wrap">
           <div className="eyebrow">FAQ</div>
-          <h2>Questions, answered</h2>
+          <h2>{site.headings.faq}</h2>
           <div style={{ marginTop: 18 }}>
-            {FAQS.map((f, i) => (
+            {site.faqs.map((f, i) => (
               <div className="faq-item" key={f.q}>
                 <button className="faq-q" type="button" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
                   {f.q} <span>{openFaq === i ? "−" : "+"}</span>
@@ -435,9 +435,9 @@ export function PatientPage() {
       <section className="section alt" id="booking">
         <div className="wrap">
           <div className="eyebrow">Book an appointment</div>
-          <h2>Pick your slot</h2>
+          <h2>{site.headings.booking}</h2>
           <p className="lead">
-            Open {hoursLabel}. {settings?.sunday ?? CLINIC.sundayNote}.
+            Open {hoursLabel}. {settings?.sunday ?? site.sundayNote}.
           </p>
           <div style={{ marginTop: 18 }}>
             <BookingForm key={`${prefill.service ?? ""}|${prefill.date ?? ""}`} prefill={prefill} />
@@ -448,12 +448,12 @@ export function PatientPage() {
             <div>
               <h3>Emergency?</h3>
               <p>
-                Severe pain, bleeding or swelling — call <b>{CLINIC.bookingPhone}</b> right away.
+                Severe pain, bleeding or swelling — call <b>{site.bookingPhone}</b> right away.
                 Emergency bookings get HOT-EMERGENCY priority so you are seen first.
               </p>
             </div>
-            <a className="btn danger" href={`tel:${CLINIC.bookingPhone.replace(/\s/g, "")}`}>Call {CLINIC.bookingPhone}</a>
-            <a className="btn" href={`https://wa.me/${CLINIC.bookingPhoneWa}?text=${encodeURIComponent("Hello, I have a dental emergency and need an urgent appointment.")}`} target="_blank" rel="noreferrer">WhatsApp</a>
+            <a className="btn danger" href={`tel:${site.bookingPhone.replace(/\s/g, "")}`}>Call {site.bookingPhone}</a>
+            <a className="btn" href={`https://wa.me/${site.bookingPhoneWa}?text=${encodeURIComponent("Hello, I have a dental emergency and need an urgent appointment.")}`} target="_blank" rel="noreferrer">WhatsApp</a>
           </div>
         </div>
       </section>
@@ -462,7 +462,7 @@ export function PatientPage() {
       <section className="section" id="portal">
         <div className="wrap">
           <div className="eyebrow">Patient Portal</div>
-          <h2>Manage your bookings</h2>
+          <h2>{site.headings.portal}</h2>
           <div style={{ marginTop: 18 }}>
             <PatientPortal />
           </div>
@@ -523,7 +523,7 @@ export function PatientPage() {
                 />
                 <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
                   <a className="btn small" href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(b.mapQuery)}`} target="_blank" rel="noreferrer">Directions</a>
-                  <a className="btn ghost small" href={`tel:${CLINIC.bookingPhone.replace(/\s/g, "")}`}>Call {CLINIC.bookingPhone}</a>
+                  <a className="btn ghost small" href={`tel:${site.bookingPhone.replace(/\s/g, "")}`}>Call {site.bookingPhone}</a>
                 </div>
               </div>
             ))}
@@ -535,15 +535,15 @@ export function PatientPage() {
       <footer className="footer" id="admin">
         <div className="wrap footer-grid">
           <div>
-            <h3>{CLINIC.name}</h3>
-            <p>{CLINIC.tagline}</p>
-            <p>Consultation is completely FREE.</p>
+            <h3>{site.clinicName}</h3>
+            <p>{site.tagline}</p>
+            <p>{site.consultationLine}.</p>
           </div>
           <div>
             <h3>Contact</h3>
-            <p>Phone / WhatsApp: <a href={`tel:${CLINIC.bookingPhone.replace(/\s/g, "")}`}>{CLINIC.bookingPhone}</a></p>
-            <p>Instagram: <a href={CLINIC.instagramUrl} target="_blank" rel="noreferrer">{CLINIC.instagram}</a></p>
-            <p>Hours: {hoursLabel}<br />{settings?.sunday ?? CLINIC.sundayNote}.</p>
+            <p>Phone / WhatsApp: <a href={`tel:${site.bookingPhone.replace(/\s/g, "")}`}>{site.bookingPhone}</a></p>
+            <p>Instagram: <a href={site.instagramUrl} target="_blank" rel="noreferrer">{site.instagram}</a></p>
+            <p>Hours: {hoursLabel}<br />{settings?.sunday ?? site.sundayNote}.</p>
           </div>
           <div>
             <h3>Branches</h3>

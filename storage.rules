@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Firebase Storage rules for clinic-ai-receptionist-9ec3a.
+//
+// Site images uploaded from the Admin "Website Content" tab live under
+// site-images/. Anyone can view them (they are shown on the public
+// site); only the verified admin can upload them. Images only, max
+// 5 MB each. Deletes are not allowed from the client — removing a photo
+// in Admin only removes its URL from the site; the file stays in
+// Storage. Everything outside site-images/ is denied.
+//
+// Publish in the Firebase console: Storage -> Rules -> paste -> Publish.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /site-images/{fileName} {
+      allow get: if true;
+      allow create, update: if request.auth != null
+        && (request.auth.uid == 'rYYk4PIaG8Xt0YY9L5NetkCde8K2'
+          || request.auth.token.email == 'itxmerajkhan3109@gmail.com')
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
