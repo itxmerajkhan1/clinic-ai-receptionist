@@ -626,11 +626,17 @@ export async function createBooking(input: CreateBookingInput): Promise<Booking>
 }
 
 export async function cancelBooking(booking: Booking): Promise<void> {
-  await updateDoc(doc(db, "bookings", booking.id), { status: "Cancelled" });
-  await updateDoc(doc(db, "availability", availDocId(booking.branch, booking.date)), {
-    taken: arrayRemove(booking.timeSlot),
-  }).catch(() => {
-    /* availability is a cache — a failed sync must not fail the action */
+  // One transaction: the booking is marked Cancelled AND its slot is
+  // released together. If either write fails, neither lands and the
+  // error reaches the caller (the UI shows it). The old two-write
+  // version silently swallowed a failed slot release, which is exactly
+  // what left #RGNRN1's 3:00 PM slot blocked after it was cancelled
+  // on 22 Nov 2026 — a cancelled booking must never keep its slot.
+  await runTransaction(db, async (tx) => {
+    tx.update(doc(db, "bookings", booking.id), { status: "Cancelled" });
+    tx.set(doc(db, "availability", availDocId(booking.branch, booking.date)), {
+      taken: arrayRemove(booking.timeSlot),
+    }, { merge: true });
   });
 }
 
@@ -688,13 +694,22 @@ export async function rescheduleBooking(
     if (taken.includes(timeSlot)) {
       throw new Error("That slot has been taken by another patient — please choose a different time.");
     }
-    tx.set(availRef, { taken: arrayUnion(timeSlot) }, { merge: true });
+    if (booking.date === date) {
+      // Same day: release the old slot and claim the new one in one
+      // write, so the old slot can never stay blocked.
+      tx.set(availRef, { taken: [...taken.filter((s) => s !== booking.timeSlot), timeSlot] }, { merge: true });
+    } else {
+      tx.set(availRef, { taken: arrayUnion(timeSlot) }, { merge: true });
+      // Release the old day's slot in the same transaction — the old
+      // version did this outside the transaction and silently swallowed
+      // failures, leaving cancelled/rescheduled slots blocked.
+      tx.set(doc(db, "availability", availDocId(booking.branch, booking.date)), {
+        taken: arrayRemove(booking.timeSlot),
+      }, { merge: true });
+    }
     tx.set(newRef, fields);
     tx.update(doc(db, "bookings", booking.id), { status: "Rescheduled" });
   });
-  await updateDoc(doc(db, "availability", availDocId(booking.branch, booking.date)), {
-    taken: arrayRemove(booking.timeSlot),
-  }).catch(() => undefined);
   rememberPortalBooking(booking.phone, newRef.id);
   return docToBooking(newRef.id, fields);
 }
