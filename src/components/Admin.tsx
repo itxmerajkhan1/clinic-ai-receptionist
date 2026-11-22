@@ -482,8 +482,7 @@ function AppointmentsTab() {
                         <button className="mini-btn danger" type="button" disabled={busyId === b.id} onClick={() => {
                           if (window.confirm("Delete this booking permanently?")) {
                             setBusyId(b.id);
-                            deleteBooking(b.id).catch(() => setError("Could not delete.")).finally(() => setBusyId(""));
-                          }
+                            deleteBooking(b).catch(() => setError("Could not delete.")).finally(() => setBusyId(""));                           }
                         }}>Delete</button>
                       )}
                       <a className="mini-btn" href={reminderUrl(b)} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>WhatsApp reminder</a>

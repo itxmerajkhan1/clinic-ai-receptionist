@@ -929,8 +929,18 @@ export async function setAdvanceStatus(id: string, status: "Verified" | "Pending
   await updateDoc(doc(db, "bookings", id), { advanceStatus: status });
 }
 
-export async function deleteBooking(id: string): Promise<void> {
-  await deleteDoc(doc(db, "bookings", id));
+export async function deleteBooking(booking: Booking): Promise<void> {
+  // Deleting a booking must also free its slot, in the same
+  // transaction. The old version only removed the booking doc, leaving
+  // the slot blocked forever — that is what happened on 22 Nov 2026,
+  // when #RGNRN1 and #5OPUMF were deleted from Admin while their
+  // 3:00 PM slot stayed taken.
+  await runTransaction(db, async (tx) => {
+    tx.delete(doc(db, "bookings", booking.id));
+    tx.set(doc(db, "availability", availDocId(booking.branch, booking.date)), {
+      taken: arrayRemove(booking.timeSlot),
+    }, { merge: true });
+  });
 }
 
 export async function submitInquiry(input: {
