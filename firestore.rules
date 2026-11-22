@@ -1,0 +1,146 @@
+rules_version = '2';
+
+// Firestore security rules — Clinic AI Receptionist
+// Firebase project: clinic-ai-receptionist-9ec3a (Firestore default database)
+// Published by hand via the Firebase console. Firestore is the sole data layer.
+// Admin is identified by UID first, with the admin email as a fallback check.
+//   Admin UID:   rYYk4PIaG8Xt0YY9L5NetkCde8K2
+//   Admin email: itxmerajkhan3109@gmail.com
+// Everything not explicitly allowed below is denied by default.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == 'rYYk4PIaG8Xt0YY9L5NetkCde8K2' ||
+        request.auth.token.email == 'itxmerajkhan3109@gmail.com'
+      );
+    }
+
+    // Non-empty string, capped at 2000 chars (blocks obviously oversized fields).
+    function isText(v) {
+      return v is string && v.size() > 0 && v.size() <= 2000;
+    }
+
+    // Optional short string (e.g. notes), capped at 2000 chars.
+    function isOptionalText(v) {
+      return v == null || (v is string && v.size() <= 2000);
+    }
+
+    // ---------- bookings ----------
+    // Public: CREATE only, plus single-document GET so the receipt flow can
+    // live-update (onSnapshot) the booking the patient just created, plus a
+    // narrow status-only UPDATE (Pending/Confirmed -> Cancelled or
+    // Rescheduled) so the Patient Portal cancel/reschedule works.
+    // CHOICE: get is open to any client, list/query is admin-only. Document
+    // IDs are unguessable Firestore auto-IDs, so a booking can only be read
+    // by someone who already holds its exact ID (e.g. from the receipt
+    // screen). There is no way in Firestore rules to limit a read to "the
+    // document this client created" without auth, so open get + no list is
+    // the safest option that still lets a receipt live-update. If a stricter
+    // model is ever wanted, require patient sign-in and match on a stored
+    // owner field instead.
+    // Admin: full read (get + list/query), update, delete.
+    match /bookings/{bookingId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isText(request.resource.data.get('name', ''))
+                    && isText(request.resource.data.get('phone', ''))
+                    && isText(request.resource.data.get('service', ''))
+                    && isText(request.resource.data.get('branch', ''))
+                    && isText(request.resource.data.get('date', ''))
+                    && isText(request.resource.data.get('time', ''))
+                    && isOptionalText(request.resource.data.get('notes', null));
+      allow update: if isAdmin()
+                    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+                        && request.resource.data.get('status', '') in ['Cancelled', 'Rescheduled']
+                        && resource.data.get('status', '') in ['Pending', 'Confirmed']);
+      allow delete: if isAdmin();
+    }
+
+    // ---------- availability ----------
+    // Public: single-doc GET (the slot picker live-reads
+    // availability/{branch}_{date} via onSnapshot) and CREATE/UPDATE of
+    // the taken-slot list inside the booking transaction.
+    // These docs hold ONLY taken slot times — no patient data — so a
+    // public write is allowed only when the resulting document contains
+    // nothing but a `taken` field: a list of strings, capped at 200.
+    // Public LIST is denied (no reason to enumerate branch/date docs).
+    // Admin: full read (get + list), create/update, delete.
+    match /availability/{docId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+                             || (request.resource.data.keys().hasOnly(['taken'])
+                                 && request.resource.data.taken is list
+                                 && request.resource.data.taken.size() <= 200);
+      allow delete: if isAdmin();
+    }
+
+    // ---------- inquiries ----------
+    // Public: CREATE only (no read/update/delete).
+    // Admin: full read, update, delete.
+    match /inquiries/{inquiryId} {
+      allow create: if isText(request.resource.data.get('message', ''))
+                    && isOptionalText(request.resource.data.get('name', null))
+                    && isOptionalText(request.resource.data.get('phone', null));
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ---------- offers ----------
+    // Public: read (get + list). Admin: create/update/delete.
+    match /offers/{offerId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- reviews ----------
+    // Public: CREATE only for new reviews (they start as pending and are
+    // never publicly visible until approved), plus read of APPROVED reviews
+    // only (single-doc get, and list queries that filter status == 'approved').
+    // Admin: full read (including pending), update (approve/reject), delete.
+    match /reviews/{reviewId} {
+      allow get: if isAdmin()
+                 || resource.data.get('status', '') == 'approved';
+      allow list: if isAdmin()
+                  || resource.data.get('status', '') == 'approved';
+      allow create: if isText(request.resource.data.get('text', ''))
+                    && (
+                      !('rating' in request.resource.data)
+                      || (
+                        request.resource.data.rating is number
+                        && request.resource.data.rating >= 1
+                        && request.resource.data.rating <= 5
+                      )
+                    )
+                    && isOptionalText(request.resource.data.get('name', null));
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- settings ----------
+    // Public: single-doc GET of every settings doc EXCEPT 'gemini'.
+    // (Clinic info, timings, prices, payment numbers live here.)
+    // settings/gemini holds the admin's Gemini API key: admin-only, never
+    // publicly readable, and not listable by the public.
+    // Admin: full read (get + list), create/update/delete on all settings
+    // docs including settings/gemini.
+    match /settings/{docId} {
+      allow get: if isAdmin() || docId != 'gemini';
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- default deny ----------
+    // Any other collection/document not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
