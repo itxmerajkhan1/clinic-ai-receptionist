@@ -9,7 +9,12 @@ rules_version = '2';
 // in Admin only removes its URL from the site; the file stays in
 // Storage. Everything outside site-images/ is denied.
 //
-// Publish in the Firebase console: Storage -> Rules -> paste -> Publish.
+// NOTE (22 Nov 2026): NOT ACTIVE. Firebase Storage is not enabled on
+// this project — the Spark free plan does not include Storage, and the
+// admin chose link-based images instead of a Blaze upgrade. The site
+// stores image LINKS in Firestore (settings/site-content), so these
+// rules are kept here for reference only, in case Storage is ever
+// enabled later. Do not publish them to a bucket that does not exist.
 
 service firebase.storage {
   match /b/{bucket}/o {

@@ -21,7 +21,7 @@ import {
   useClinicSettings,
   useSiteContent,
   saveSiteContent,
-  uploadSiteImage,
+  toDirectImageUrl,
   seedDefaultsIfMissing,
   saveClinicSettings,
   setBookingStatus,
@@ -1202,8 +1202,10 @@ function SettingsTab() {
 /* Everything saved here appears on the live site at once (the         */
 /* patient page reads settings/site-content live). Text that was never  */
 /* saved falls back to the built-in defaults, so nothing renders       */
-/* blank. Images upload to Firebase Storage (admin-only upload,        */
-/* public read — see storage.rules) and are saved by URL.              */
+/* blank. Pictures are image LINKS the admin pastes — a Google Drive   */
+/* share link works (it is converted to a direct image URL); the Drive  */
+/* file must be shared as "Anyone with the link". No upload, no        */
+/* Firebase Storage — the project stays on the free Spark plan.        */
 /* ------------------------------------------------------------------ */
 
 function Field({
@@ -1239,33 +1241,6 @@ function Field({
         />
       )}
     </div>
-  );
-}
-
-function UploadButton({
-  label,
-  disabled,
-  onFile,
-}: {
-  label: string;
-  disabled?: boolean;
-  onFile: (f: File) => void;
-}) {
-  return (
-    <label className="btn" style={{ display: "inline-block", cursor: disabled ? "wait" : "pointer", opacity: disabled ? 0.6 : 1 }}>
-      {label}
-      <input
-        type="file"
-        accept="image/*"
-        disabled={disabled}
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (f) onFile(f);
-        }}
-      />
-    </label>
   );
 }
 
@@ -1378,7 +1353,6 @@ function WebsiteContentTab() {
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   // Clinic identity
   const [clinicName, setClinicName] = useState("");
@@ -1396,9 +1370,12 @@ function WebsiteContentTab() {
   // Section headings
   const [headings, setHeadings] = useState(content.headings);
 
-  // Images
+  // Images (link-based)
   const [heroImageUrl, setHeroImageUrl] = useState("");
+  const [heroUrlDraft, setHeroUrlDraft] = useState("");
   const [gallery, setGallery] = useState<GalleryImage[]>([]);
+  const [newPhotoUrl, setNewPhotoUrl] = useState("");
+  const [newPhotoTitle, setNewPhotoTitle] = useState("");
 
   // Lists
   const [faqs, setFaqs] = useState<FaqItem[]>([]);
@@ -1423,6 +1400,7 @@ function WebsiteContentTab() {
     setSundayNote(content.sundayNote);
     setHeadings(content.headings);
     setHeroImageUrl(content.heroImageUrl);
+    setHeroUrlDraft(content.heroImageUrl);
     setGallery(content.gallery);
     setFaqs(content.faqs);
     setHowItWorks(content.howItWorks);
@@ -1447,36 +1425,40 @@ function WebsiteContentTab() {
     }
   }
 
-  async function onHeroFile(file: File) {
+  async function useHeroUrl() {
     setError("");
     setMsg("");
-    setUploading(true);
+    const url = toDirectImageUrl(heroUrlDraft);
+    if (!/^https?:\/\//.test(url)) return setError("Paste a full image link starting with https://");
+    setBusy(true);
     try {
-      const url = await uploadSiteImage(file);
       setHeroImageUrl(url);
       await saveSiteContent({ heroImageUrl: url });
-      setMsg("Hero image uploaded and saved — it is live on the site now.");
+      setMsg("Hero image saved — it is live on the site now.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      setError(err instanceof Error ? err.message : "Could not save.");
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   }
 
-  async function onGalleryFile(file: File) {
+  async function addGalleryPhoto() {
     setError("");
     setMsg("");
-    setUploading(true);
+    const url = toDirectImageUrl(newPhotoUrl);
+    if (!/^https?:\/\//.test(url)) return setError("Paste a full image link starting with https://");
+    const next = [...gallery, { url, title: newPhotoTitle.trim() || "New photo" }];
+    setBusy(true);
     try {
-      const url = await uploadSiteImage(file);
-      const next = [...gallery, { url, title: "New photo" }];
       setGallery(next);
+      setNewPhotoUrl("");
+      setNewPhotoTitle("");
       await saveSiteContent({ gallery: next });
-      setMsg("Photo uploaded and saved — it is live in the gallery now. Edit its title below and save the gallery to keep the title.");
+      setMsg("Photo added — it is live in the gallery now.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      setError(err instanceof Error ? err.message : "Could not save.");
     } finally {
-      setUploading(false);
+      setBusy(false);
     }
   }
 
@@ -1487,8 +1469,9 @@ function WebsiteContentTab() {
     <div>
       <h1>Website Content</h1>
       <p className="muted">
-        Everything here changes the live public site the moment you save it. Pictures upload straight from your
-        device — no links needed. Anything you leave untouched keeps the current text and pictures.
+        Everything here changes the live public site the moment you save it. Pictures work by link: paste an image
+        link (a Google Drive share link works — share the file as &quot;Anyone with the link&quot; first, the link is
+        converted automatically). Anything you leave untouched keeps the current text and pictures.
       </p>
       {error && <div className="error">{error}</div>}
       {msg && <div className="notice">{msg}</div>}
@@ -1540,8 +1523,11 @@ function WebsiteContentTab() {
         ) : (
           <p className="muted">No hero image yet — the hero shows the headline only.</p>
         )}
+        <Field label="Image link" value={heroUrlDraft} onChange={setHeroUrlDraft} placeholder="https://drive.google.com/file/d/... or a direct image link" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <UploadButton label={uploading ? "Uploading…" : "Upload hero image"} disabled={uploading} onFile={(f) => void onHeroFile(f)} />
+          <button className="btn" type="button" disabled={busy} onClick={() => void useHeroUrl()}>
+            Use this image
+          </button>
           {heroImageUrl && (
             <button
               className="btn ghost"
@@ -1549,6 +1535,7 @@ function WebsiteContentTab() {
               disabled={busy}
               onClick={() => {
                 setHeroImageUrl("");
+                setHeroUrlDraft("");
                 void save({ heroImageUrl: "" }, "Hero image removed.");
               }}
             >
@@ -1570,7 +1557,7 @@ function WebsiteContentTab() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Gallery photos</h2>
-        <p className="muted">Upload photos from your device. Edit a title, then save the gallery. Removing a photo here removes it from the site.</p>
+        <p className="muted">Paste an image link to add a photo. Edit a title, then save the gallery. Removing a photo here removes it from the site.</p>
         {gallery.length === 0 && <p className="muted">No gallery photos yet.</p>}
         {gallery.map((g, i) => (
           <div key={i} className="card" style={{ marginBottom: 10, padding: 12 }}>
@@ -1585,9 +1572,13 @@ function WebsiteContentTab() {
             </button>
           </div>
         ))}
+        <Field label="New photo link" value={newPhotoUrl} onChange={setNewPhotoUrl} placeholder="https://drive.google.com/file/d/... or a direct image link" />
+        <Field label="New photo title" value={newPhotoTitle} onChange={setNewPhotoTitle} placeholder="e.g. Reception" />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <UploadButton label={uploading ? "Uploading…" : "Upload a photo"} disabled={uploading} onFile={(f) => void onGalleryFile(f)} />
-          <button className="btn" type="button" disabled={busy} onClick={() => void save({ gallery }, "Gallery saved — live on the site now.")}>
+          <button className="btn" type="button" disabled={busy} onClick={() => void addGalleryPhoto()}>
+            Add photo
+          </button>
+          <button className="btn ghost" type="button" disabled={busy} onClick={() => void save({ gallery }, "Gallery saved — live on the site now.")}>
             Save gallery
           </button>
         </div>

@@ -23,9 +23,10 @@
 // - settings/doctors     — doctor list (admin-managed)
 // - settings/site-content — website content the admin edits from the
 //                          "Website Content" tab (headings, clinic
-//                          identity, FAQs, lists, gallery, hero image)
-// - Storage site-images/ — admin-uploaded site images (public read,
-//                          admin-only upload per storage.rules)
+//                          identity, FAQs, lists, gallery, hero image).
+//                          Pictures are image LINKS the admin pastes
+//                          (e.g. a Google Drive share link) — no
+//                          Firebase Storage, no Blaze upgrade.
 //
 // Real-time: reads below are onSnapshot subscriptions, so a change on
 // any device appears everywhere immediately. There is NO fallback
@@ -63,12 +64,6 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
 import { useEffect, useState } from "react";
 import {
   CLINIC,
@@ -97,7 +92,6 @@ export const FIREBASE_CONFIG = {
 const app = initializeApp(FIREBASE_CONFIG);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
-export const storage = getStorage(app);
 
 /** The one admin identity: the admin account's email. */
 export const ADMIN_EMAIL = CLINIC.adminEmail;
@@ -506,8 +500,9 @@ export async function saveClinicSettings(
 /* any field the admin has never saved, so the site never renders      */
 /* blank. Firestore rules already allow public get + admin-only write  */
 /* on settings/{docId} (except settings/gemini), so no rules change    */
-/* is needed for this doc. Images live in Firebase Storage under       */
-/* site-images/ (see storage.rules: admin-only upload, public read).   */
+/* is needed for this doc. Pictures are image LINKS the admin pastes   */
+/* (a Google Drive share link is converted to a direct image URL) —    */
+/* there is no Firebase Storage on this project (Spark plan).          */
 /* ------------------------------------------------------------------ */
 
 export type GalleryImage = { url: string; title: string };
@@ -687,19 +682,18 @@ export async function saveSiteContent(patch: Partial<SiteContent>): Promise<void
   );
 }
 
-/** Upload an admin-chosen image to Firebase Storage and return its public URL. */
-export async function uploadSiteImage(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Please choose an image file (JPG or PNG).");
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error("That image is over 5 MB — please choose a smaller one.");
-  }
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `site-images/${Date.now()}-${safeName}`;
-  const ref = storageRef(storage, path);
-  await uploadBytes(ref, file, { contentType: file.type });
-  return getDownloadURL(ref);
+/** Turn a pasted image link into a URL an <img> can load. Google Drive
+ *  share links need converting (drive.google.com/file/d/<id>/view ->
+ *  drive.google.com/uc?export=view&id=<id>); direct image links pass
+ *  through unchanged. The Drive file must be shared as "Anyone with
+ *  the link" or visitors will not see it. */
+export function toDirectImageUrl(url: string): string {
+  const u = url.trim();
+  const fileMatch = u.match(/drive\.google\.com\/file\/d\/([^/?#]+)/);
+  if (fileMatch) return `https://drive.google.com/uc?export=view&id=${fileMatch[1]}`;
+  const openMatch = u.match(/drive\.google\.com\/open\?[^#]*\bid=([^&#]+)/);
+  if (openMatch) return `https://drive.google.com/uc?export=view&id=${openMatch[1]}`;
+  return u;
 }
 
 /** Slot list generated from the admin-saved hours (inclusive). */
